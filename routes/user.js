@@ -1,48 +1,91 @@
-var express = require('express');
+var express = require("express");
 var router = express.Router();
 
-var User = require('../models/user')
-var passport = require('passport')
-var LocalStrategy = require('passport-local').Strategy
+var User = require("../models/user");
+var passport = require("passport");
+var LocalStrategy = require("passport-local").Strategy;
 
 passport.serializeUser(function(user, done) {
-  done(null, user.id);
+    done(null, user.id);
 });
 
 passport.deserializeUser(function(id, done) {
-  User.findById(id, function (err, user) {
-    done(err, user);
-  });
+    User.findById(id, function(err, user) {
+        done(err, user);
+    });
 });
 
-passport.use('local.signup', new LocalStrategy({
-    usernameField: 'email',
-    passwordField: 'password'
-}, function (email, password, done) {
+passport.use(
+    "local.signup",
+    new LocalStrategy(
+        {
+            usernameField: "email",
+            passwordField: "password"
+        },
+        function(email, password, done) {
+            User.findOne(
+                {
+                    email: email
+                },
+                function(err, user) {
+                    if (err) {
+                        return done(err);
+                    }
 
-    User.findOne({
-        'email': email
-    }, function (err, user) {
+                    if (user) {
+                        return done(null, false, {
+                            message: "Email already in use"
+                        });
+                    }
 
-        if (err) { return done(err) }
+                    var newUser = new User();
 
-        if (user) {
-            return done(null, false, { message: 'Email already in use' })
+                    newUser.email = email;
+                    newUser.password = newUser.hashPassword(password);
+                    newUser.save(function(err, user) {
+                        if (err) {
+                            return done(err);
+                        }
+                        return done(null, user);
+                    });
+                }
+            );
         }
+    )
+);
 
-        var newUser = new User();
+passport.use(
+    "local.signin",
+    new LocalStrategy(
+        {
+            usernameField: "email",
+            passwordField: "password"
+        },
+        function(email, password, done) {
+            User.findOne(
+                {
+                    email: email
+                },
+                function(err, user) {
+                    if (err) {
+                        return done(err);
+                    }
 
-        newUser.email = email;
-        newUser.password = password;
-        newUser.save(function (err, user) {
-            if (err) { return done(err) }
-            return done(null, user);
-        })
-    })
-}))
+                    if (!user || !user.verifyPassword(password)) {
+                        return done(null, false, {
+                            message: "User doesn't exist"
+                        });
+                    }
 
-router.get('/signup', function(req, res, next) {
-  res.render('user/signup')
+                    return done(null, user);
+                }
+            );
+        }
+    )
+);
+
+router.get("/signup", guest, function(req, res, next) {
+    res.render("user/signup");
 });
 
 /*
@@ -51,13 +94,51 @@ router.post('/signup', function(req, res, next) {
 });
 */
 
-router.post('/signup', passport.authenticate('local.signup', {
-    successRedirect: '/user/profile',
-    failureRedirect: "/user/signup"
-}));
+router.post(
+    "/signup",
+    passport.authenticate("local.signup", {
+        successRedirect: "/user/profile",
+        failureRedirect: "/user/signup"
+    })
+);
 
-router.get('/profile', function(req, res, next) {
-  res.send(req.user)
+router.get("/signin", guest, function(req, res, next) {
+    res.render("user/signin");
 });
+
+router.post(
+    "/signin",
+    passport.authenticate("local.signin", {
+        successRedirect: "/user/profile",
+        failureRedirect: "/user/signin"
+    })
+);
+
+router.get("/profile", signed, function(req, res, next) {
+    res.render("user/profile");
+});
+
+router.get("/signout", signed, function(req, res) {
+    req.logout()
+    res.redirect('/')
+});
+
+function signed(req, res, next)
+{
+    if (!req.isAuthenticated()) {
+        res.redirect('/')
+    }
+
+    next()
+}
+
+function guest(req, res, next)
+{
+    if (req.isAuthenticated()) {
+        res.redirect('/')
+    }
+
+    next()
+}
 
 module.exports = router;
